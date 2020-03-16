@@ -4,21 +4,21 @@ const { perfil: obterPerfil } = require('../Query/perfil')
 const { usuario: obterUsuario } = require('../Query/usuario')
 
 const mutations = {
-    registraUsuario(_,{dados}){
-        return mutations.novoUsuario(_,{
-            dados:{
+    registrarUsuario(_, { dados }) {
+        return mutations.novoUsuario(_, {
+            dados: {
                 nome: dados.nome,
                 email: dados.email,
-                senha: dados.senha
+                senha: dados.senha,
             }
         })
-    }, 
-
-    async novoUsuario(_, { dados }) {
+    },
+    async novoUsuario(_, { dados }, ctx) {
+        ctx && ctx.validarAdmin()
         try {
             const idsPerfis = []
 
-            if(!dados.perfis || !dados.perfis.length){
+            if(!dados.perfis || !dados.perfis.length) {
                 dados.perfis = [{
                     nome: 'comum'
                 }]
@@ -31,6 +31,10 @@ const mutations = {
                 if(perfil) idsPerfis.push(perfil.id)
             }
 
+            // criptografar a senha
+            const salt = bcrypt.genSaltSync()
+            dados.senha = bcrypt.hashSync(dados.senha, salt)
+
             delete dados.perfis
             const [ id ] = await db('usuarios')
                 .insert(dados)
@@ -40,17 +44,14 @@ const mutations = {
                     .insert({ perfil_id, usuario_id: id })
             }
 
-            //criptografar a senha
-            const salt = bcrypt.genSaltSync()
-            dados.senha = bcrypt.hashSync(dados.senha, salt)
-
             return db('usuarios')
                 .where({ id }).first()
         } catch(e) {
             throw new Error(e.sqlMessage)
         }
     },
-    async excluirUsuario(_, args) {
+    async excluirUsuario(_, args, ctx) {
+        ctx && ctx.validarAdmin()
         try {
             const usuario = await obterUsuario(_, args)
             if(usuario) {
@@ -66,12 +67,13 @@ const mutations = {
         }
 
     },
-    async alterarUsuario(_, { filtro, dados }) {
+    async alterarUsuario(_, { filtro, dados }, ctx) {
+        ctx && ctx.validarUsuarioFiltro(filtro)
         try {
             const usuario = await obterUsuario(_, { filtro })
             if(usuario) {
                 const { id } = usuario
-                if(dados.perfis) {
+                if(ctx.admin && dados.perfis) {
                     await db('usuarios_perfis')
                         .where({ usuario_id: id }).delete()
 
@@ -90,8 +92,9 @@ const mutations = {
                     }
                 }
 
-                if(dados.senha){
-                    const salt  = bcrypt.genSaltSync()
+                if(dados.senha) {
+                    // criptografar a senha
+                    const salt = bcrypt.genSaltSync()
                     dados.senha = bcrypt.hashSync(dados.senha, salt)
                 }
 
